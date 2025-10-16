@@ -1,0 +1,19 @@
+[project]
+name = "mingpt"
+version = "0.1.0"
+description = "Miniature implementation of GPT with pytorch."
+authors = [
+    {name = "Kirill Madorskii",email = "madorskii.kv@phystech.edu"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11, <=3.13"
+dependencies = [
+    "torch (>=2.9.0,<3.0.0)",
+    "numpy (>=2.3.4,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
