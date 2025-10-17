@@ -1,0 +1,8 @@
+# Ignore cache files
+__pycache__
+
+# Ignore ipynb's
+*.ipynb
+
+# Ignore output files
+out
