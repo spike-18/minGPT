@@ -41,13 +41,12 @@ def get_config():
 # -----------------------------------------------------------------------------
 
 class PalindromeDataset(Dataset):
-    # TODO: implement variable input length
     """ 
     Dataset for palindrome detection. E.g. for problem length 6:
     Input: 1 2 3 2 1 -> Output: 1
     Input: 1 2 3 3 3 -> Output: 0
     Which will feed into the transformer concatenated as:
-    input:  1 2 3 2 1 1
+    input:  1 2 3 2 1 E
     output: I I I I I 1
     where I is "ignore", as the transformer is reading the input sequence
     """
@@ -65,6 +64,7 @@ class PalindromeDataset(Dataset):
         self.length = length
         self.num_digits = num_digits
         self.num_classes = 2
+        self.block_size = 10
     
     def __len__(self):
         return 10000 # leave for now
@@ -76,17 +76,20 @@ class PalindromeDataset(Dataset):
         # the length of the sequence that will feed into transformer, 
         # containing concatenated input and the output, but -1 because
         # the transformer starts making predictions at the last input element
-        return self.length + 1
+        return self.block_size + 2 # maximum input will be 1023-digit sequence + E (seq end) + Class
 
     def __getitem__(self, idx):
         
         # use rejection sampling to generate an input example from the desired split
+        seq_len = torch.randint(2, self.block_size-1, size=(1,), dtype=torch.long)
+        payl_len = seq_len - 1
         while True:
+            # generate sequence length
             # generate some random integers
-            inp = torch.randint(self.num_digits, size=(self.length,), dtype=torch.long)
+            inp = torch.randint(self.num_digits, size=(self.block_size,), dtype=torch.long) # leave last position for EOS
             # half of the time generate palindrome
             if torch.rand(1).item() < 0.5:
-                inp[:self.length//2] = inp[ self.length//2 + self.length%2 :].flipud()
+                inp[:payl_len//2] = inp[ payl_len//2 + payl_len%2 : payl_len].flipud()
             # figure out if this generated example is train or test based on its hash
             h = hash(inp.__str__())
             inp_split = 'test' if h % 4 == 0 else 'train' # designate 25% of examples as test
@@ -94,16 +97,20 @@ class PalindromeDataset(Dataset):
                 break # ok
         
         # solve the task:
-        sol = torch.all(inp[:self.length//2] == inp[ self.length//2 + self.length%2 :].flipud(), keepdim=True)
+        sol = torch.all(inp[:payl_len//2] == inp[ payl_len//2 + payl_len%2 : payl_len].flipud())
 
         # concatenate the problem specification and the solution
-        cat = torch.cat((inp, sol), dim=0)
+        inp[payl_len] = -1 # set EOS -1
+        # set output
+        inp[seq_len] = sol.to(torch.long)
+        # set other tokens to 0 as default
+        inp[seq_len+1:] = 0
 
         # the inputs to the transformer will be the offset sequence
-        x = cat[:-1].clone()
-        y = cat[1:].clone()
+        x = inp[:-1].clone()
+        y = inp[1:].clone()
         # we only want to predict at output locations, mask out the loss at the input locations
-        y[:self.length-1] = -1
+        y[:seq_len-1] = -1
         return x, y
     
     
@@ -117,9 +124,7 @@ if __name__ == '__main__':
     # construct train and test datasets
     train_dataset = PalindromeDataset(split='train',  length=config.data.length, num_digits=config.data.num_digits)
     test_dataset  = PalindromeDataset(split='test', length=config.data.length, num_digits=config.data.num_digits)
-    
-    # print(train_dataset[0])
-    
+        
     # construct the model
     config.model.vocab_size = train_dataset.get_vocab_size()
     config.model.block_size = train_dataset.get_block_size()
