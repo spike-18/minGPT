@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 
 import torch
 from torch.utils.data import Dataset
@@ -9,6 +8,8 @@ from torch.utils.data.dataloader import DataLoader
 from mingpt.model import GPT
 from mingpt.trainer import Trainer
 from mingpt.utils import set_seed, setup_logging, CfgNode as CN
+
+from utils import tns_to_str
 
 # -----------------------------------------------------------------------------
 
@@ -19,18 +20,21 @@ def get_config():
     # system
     C.system = CN()
     C.system.seed = 3407
-    C.system.work_dir = './out/adder'
+    C.system.work_dir = './out/palindromes'
 
     # data
     C.data = PalindromeDataset.get_default_config()
 
     # model
     C.model = GPT.get_default_config()
-    C.model.model_type = 'gpt-nano'
+    C.model.model_type = 'gpt-mini'
+    C.model.num_classes = 2
 
     # trainer
     C.trainer = Trainer.get_default_config()
     C.trainer.learning_rate = 5e-4 # the model we're using is so small that we can go a bit faster
+    C.train_max_batches = 10
+    C.trainer.max_iters = 3000
 
     return C
 
@@ -60,6 +64,7 @@ class PalindromeDataset(Dataset):
         self.split = split
         self.length = length
         self.num_digits = num_digits
+        self.num_classes = 2
     
     def __len__(self):
         return 10000 # leave for now
@@ -107,17 +112,20 @@ if __name__ == '__main__':
     # get default config and overrides from the command line, if any
     config = get_config()
     config.merge_from_args(sys.argv[1:])
-    print(config)
-    setup_logging(config)
     set_seed(config.system.seed)
     
     # construct train and test datasets
     train_dataset = PalindromeDataset(split='train',  length=config.data.length, num_digits=config.data.num_digits)
     test_dataset  = PalindromeDataset(split='test', length=config.data.length, num_digits=config.data.num_digits)
     
+    # print(train_dataset[0])
+    
     # construct the model
     config.model.vocab_size = train_dataset.get_vocab_size()
     config.model.block_size = train_dataset.get_block_size()
+    print(config)
+    setup_logging(config)
+
     model = GPT(config.model)
 
     # construct the trainer object
@@ -134,7 +142,7 @@ if __name__ == '__main__':
             # let the model sample the rest of the sequence
             out = model.generate(x, 1, do_sample=False) # using greedy argmax, not sampling
             # isolate the last digit of the sampled sequence
-            pred = out[:, -1:]
+            pred = out[:, -1:].to('cpu')
             # evaluate the correctness of the results in this batch
             gt = y[:, -1:]
             correct = (pred == gt).cpu() # Software 1.0 vs. Software 2.0 fight RIGHT on this line haha
@@ -142,7 +150,7 @@ if __name__ == '__main__':
                 results.append(int(correct[i]))
                 if not correct[i] and mistakes_printed_already < 5: # only print up to 5 mistakes to get a sense
                     mistakes_printed_already += 1
-                    print("GPT claims that %s is palindrome" % (x[i].__str__()))
+                    print("GPT claims that %s is %spalindrome" % (tns_to_str(x[i]), 'not ' if pred[i] == 0 else ''))
             if max_batches is not None and b+1 >= max_batches:
                 break
         rt = torch.tensor(results, dtype=torch.float)
@@ -159,11 +167,20 @@ if __name__ == '__main__':
 
         if trainer.iter_num % 500 == 0:
             # evaluate both the train and test score
-            train_max_batches = {1: None, 2: None, 3: 5}[config.data.num_digits] # if ndigit=2 we can afford the whole train set, ow no
+            train_max_batches = config.train_max_batches
             model.eval()
             with torch.no_grad():
                 train_score = eval_split(trainer, 'train', max_batches=train_max_batches)
                 test_score  = eval_split(trainer, 'test',  max_batches=None)
+            
+            score = train_score + test_score
+            # save the model if this is the best score we've seen so far
+            if score > top_score:
+                top_score = score
+                print(f"saving model with new top score of {score}")
+                ckpt_path = os.path.join(config.system.work_dir, "model.pt")
+                torch.save(model.state_dict(), ckpt_path)
+            
             model.train()
 
     trainer.set_callback('on_batch_end', batch_end_callback)
