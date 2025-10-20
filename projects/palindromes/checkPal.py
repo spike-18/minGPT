@@ -24,6 +24,7 @@ def get_config():
 
     # data
     C.data = PalindromeDataset.get_default_config()
+    C.data.num_digits = 10
 
     # model
     C.model = GPT.get_default_config()
@@ -32,9 +33,10 @@ def get_config():
 
     # trainer
     C.trainer = Trainer.get_default_config()
-    C.trainer.learning_rate = 5e-4 # the model we're using is so small that we can go a bit faster
-    C.train_max_batches = 10
-    C.trainer.max_iters = 3000
+    C.trainer.learning_rate = 3e-4 # the model we're using is so small that we can go a bit faster
+    C.train_max_batches = 2
+    C.trainer.batch_size = 100
+    C.trainer.max_iters = 10000
 
     return C
 
@@ -55,38 +57,37 @@ class PalindromeDataset(Dataset):
     def get_default_config():
         C = CN()
         C.num_digits = 10
-        C.length = 6
         return C
 
-    def __init__(self, split, length=6, num_digits=3):
+    def __init__(self, split, num_digits=3):
         assert split in {'train', 'test'}
         self.split = split
-        self.length = length
         self.num_digits = num_digits
         self.num_classes = 2
-        self.block_size = 10
+        self.block_size = 6
     
     def __len__(self):
-        return 10000 # leave for now
+        return 100 # leave for now
     
     def get_vocab_size(self):
-        return self.num_digits
+        return self.num_digits + 1 # number of digits + EOS
     
     def get_block_size(self):
         # the length of the sequence that will feed into transformer, 
         # containing concatenated input and the output, but -1 because
         # the transformer starts making predictions at the last input element
-        return self.block_size + 2 # maximum input will be 1023-digit sequence + E (seq end) + Class
+        return self.block_size # maximum input will be (block_size-1)-digit sequence + E (seq end)
 
     def __getitem__(self, idx):
         
         # use rejection sampling to generate an input example from the desired split
-        seq_len = torch.randint(2, self.block_size-1, size=(1,), dtype=torch.long)
+        seq_len = torch.randint(2, self.block_size, size=(1,), dtype=torch.long)
+        # seq_len = max(2, (idx // 1000) % self.block_size)
         payl_len = seq_len - 1
         while True:
             # generate sequence length
             # generate some random integers
-            inp = torch.randint(self.num_digits, size=(self.block_size,), dtype=torch.long) # leave last position for EOS
+            inp = torch.randint(self.num_digits, size=(self.block_size+1,), dtype=torch.long) # leave last position for EOS
             # half of the time generate palindrome
             if torch.rand(1).item() < 0.5:
                 inp[:payl_len//2] = inp[ payl_len//2 + payl_len%2 : payl_len].flipud()
@@ -99,18 +100,19 @@ class PalindromeDataset(Dataset):
         # solve the task:
         sol = torch.all(inp[:payl_len//2] == inp[ payl_len//2 + payl_len%2 : payl_len].flipud())
 
-        # concatenate the problem specification and the solution
-        inp[payl_len] = -1 # set EOS -1
-        # set output
-        inp[seq_len] = sol.to(torch.long)
+        # set EOS 11 as there's no digit >= num_digits
+        inp[payl_len] = self.num_digits
         # set other tokens to 0 as default
-        inp[seq_len+1:] = 0
+        inp[seq_len:] = 0
 
         # the inputs to the transformer will be the offset sequence
         x = inp[:-1].clone()
         y = inp[1:].clone()
         # we only want to predict at output locations, mask out the loss at the input locations
+        # set output
+        y[seq_len-1] = sol.to(torch.long)
         y[:seq_len-1] = -1
+        y[seq_len:] = -1
         return x, y
     
     
@@ -122,8 +124,8 @@ if __name__ == '__main__':
     set_seed(config.system.seed)
     
     # construct train and test datasets
-    train_dataset = PalindromeDataset(split='train',  length=config.data.length, num_digits=config.data.num_digits)
-    test_dataset  = PalindromeDataset(split='test', length=config.data.length, num_digits=config.data.num_digits)
+    train_dataset = PalindromeDataset(split='train', num_digits=config.data.num_digits)
+    test_dataset  = PalindromeDataset(split='test', num_digits=config.data.num_digits)
         
     # construct the model
     config.model.vocab_size = train_dataset.get_vocab_size()
@@ -141,15 +143,18 @@ if __name__ == '__main__':
         dataset = {'train':train_dataset, 'test':test_dataset}[split]
         results = []
         mistakes_printed_already = 0
-        loader = DataLoader(dataset, batch_size=100, num_workers=0, drop_last=False)
+        loader = DataLoader(dataset, batch_size=1000, num_workers=0, drop_last=False)
         for b, (x, y) in enumerate(loader):
             x = x.to(trainer.device)
+            y = y.to(trainer.device)
             # let the model sample the rest of the sequence
             out = model.generate(x, 1, do_sample=False) # using greedy argmax, not sampling
             # isolate the last digit of the sampled sequence
-            pred = out[:, -1:].to('cpu')
+            pred = out[:, -1:].view(-1)
             # evaluate the correctness of the results in this batch
-            gt = y[:, -1:]
+            
+            mask = (x == trainer.train_dataset.num_digits)
+            gt = y[mask]
             correct = (pred == gt).cpu() # Software 1.0 vs. Software 2.0 fight RIGHT on this line haha
             for i in range(x.size(0)):
                 results.append(int(correct[i]))
