@@ -12,18 +12,7 @@ from checkPal import PalindromeDataset
 # -----------------------------------------------------------------------------
 
 def get_config():
-    # with open('out/palindromes/config.json', 'r') as f:
-    #     json_conf = json.load(f)
-        
-    # C = CN()
-    
-    # for key, val in zip(json_conf.keys(), json_conf.values()):
-    #     if type(val) is dict:
-    #         json_conf[key] = CN(**val)
-        
-    # C.merge_from_dict(json_conf)
-    
-    # return C
+
     C = CN()
 
     # system
@@ -36,19 +25,20 @@ def get_config():
 
     # model
     C.model = GPT.get_default_config()
-    C.model.model_type = 'gpt-mini'
+    C.model.model_type = 'gpt-micro'
     C.model.num_classes = 2
+    C.model.block_size = 50
     C.model.vocab_size = 10
-    C.model.block_size = 7
-
 
     # trainer
     C.trainer = Trainer.get_default_config()
-    C.trainer.learning_rate = 5e-4 # the model we're using is so small that we can go a bit faster
-    C.train_max_batches = 10
+    C.trainer.learning_rate = 3e-4
+    C.trainer.max_iters = 50000
+    C.trainer.batch_size = 64
+    C.val_max_batches = 50
 
     return C
-    
+
 
 # -----------------------------------------------------------------------------
 
@@ -68,10 +58,11 @@ if __name__ == '__main__':
     model.load_state_dict(state_dict)
     
     model.eval()        
-    inp = input("Type 'q' to exit.\nInput sequence of %d digits: " % config.data.length)
+    inp = input("Type 'q' to exit.\nInput sequence of max %d digits: " % (config.model.block_size))
     
     while(inp != 'q'):
-        inp = str_to_tns(inp).to(device)
+        inp = str_to_tns(inp, config.data.num_digits, config.model.block_size).to(device)
+        
         inp = inp.view(1, -1)
         logits, _ = model(inp)
         
@@ -82,4 +73,4 @@ if __name__ == '__main__':
         prediction = torch.argmax(probs)
         print("%d (%spalindrome)" % (prediction, 'not ' if prediction == 0 else ''))
          
-        inp = input("Input sequence of %d digits (q to exit): " % config.data.length)
+        inp = input("Input sequence of %d digits (q to exit): " % (config.model.block_size))

@@ -67,9 +67,9 @@ class Trainer:
         # setup the dataloader
         train_loader = DataLoader(
             self.train_dataset,
-            sampler=torch.utils.data.RandomSampler(self.train_dataset, replacement=True, num_samples=int(1e10)),
+            sampler=torch.utils.data.SequentialSampler(self.train_dataset),
             shuffle=False,
-            pin_memory=True,
+            pin_memory=False,
             batch_size=config.batch_size,
             num_workers=config.num_workers,
         )
