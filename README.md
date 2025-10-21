@@ -19,6 +19,7 @@ minGPT/
 ```
 
 (If some files/directories are missing in your checkout, use the above structure as intended for organizing code.)
+
 ## Installation
 
 ```bash
