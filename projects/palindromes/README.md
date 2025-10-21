@@ -25,8 +25,8 @@ Specify configuration in checkPal.py module
     ...
 
     C.model.model_type = 'gpt-micro'
-    C.model.num_classes = 2     # Since we predict class palindrome / not palindrome
-    C.model.block_size = 50     # 50-digit sequences max input
+    C.model.num_classes = 2           # Since we predict class palindrome / not palindrome
+    C.model.block_size = 50           # 50-digit sequences max input
 
 ```
 
@@ -42,6 +42,7 @@ Run test of the model:
 
 ``` bash
 
+# Make sure config in testModel.py is exactly the same as in checkPal.py!
 python testModel.py out/palindromes/model.pt
 ```
 
