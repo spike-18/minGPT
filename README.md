@@ -4,6 +4,8 @@ A minimal, educational GPT-style transformer implementation for experimenting wi
 
 ## Project structure
 
+```bash
+
 minGPT/
 ├── projects/                 # Projects
 │   └── palindromes/
@@ -14,9 +16,9 @@ minGPT/
 │   └── utils.py              # Utils
 ├── pyproject.toml            # Package configuration file
 └── README.md                 # This file
+```
 
 (If some files/directories are missing in your checkout, use the above structure as intended for organizing code.)
-
 ## Installation
 
 ```bash
