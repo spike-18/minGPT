@@ -44,3 +44,7 @@ Run test of the model:
 
 python testModel.py out/palindromes/model.pt
 ```
+
+## Results
+
+As a result of my experiments a tiny model 'GPT-micro' of 0.8M params can successefully classify palindromes of length 50 digits.
